@@ -1,8 +1,8 @@
 {
-  "name": "homebridge-independent-platform-example",
+  "name": "homebridge-domoja",
   "version": "1.0.0",
-  "description": "An example independent platform plugin for homebridge written in Typescript",
-  "main": "dist/independent-platform.js",
+  "description": "Homebridge plugin for Domoja",
+  "main": "dist/domoja-platform.js",
   "scripts": {
     "clean": "rimraf ./dist",
     "build": "rimraf ./dist && tsc",
@@ -10,13 +10,14 @@
     "postpublish": "npm run clean",
     "test": "echo \"Error: no test specified\" && exit 1"
   },
-  "author": "Andreas Bauer <mail@anderl-bauer.de>",
+  "author": "Bruno Chabrier",
+  "keywords": [
+    "homebridge-plugin",
+    "domoja"
+  ],
   "engines": {
     "homebridge": ">=1.0.0"
   },
-  "keywords": [
-    "homebridge-plugin"
-  ],
   "license": "ISC",
   "files": [
     "LICENSE",
@@ -30,9 +31,9 @@
     "url": "https://github.com/homebridge/homebridge-examples/issues"
   },
   "devDependencies": {
-    "@types/node": "16.18.25",
-    "typescript": "^5.0.4",
+    "@types/node": "16.11.7",
+    "homebridge": "^1.7.0",
     "rimraf": "^5.0.0",
-    "homebridge": "^1.6.1"
+    "typescript": "^5.0.4"
   }
 }

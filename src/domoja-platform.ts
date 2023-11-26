@@ -13,8 +13,8 @@ import {
   PlatformConfig,
 } from "homebridge";
 
-const PLUGIN_NAME = "homebridge-dynamic-platform-example";
-const PLATFORM_NAME = "ExampleDynamicPlatform";
+const PLUGIN_NAME = "homebridge-domoja";
+const PLATFORM_NAME = "DomojaPlatform";
 
 /*
  * IMPORTANT NOTICE
@@ -45,10 +45,10 @@ export = (api: API) => {
   hap = api.hap;
   Accessory = api.platformAccessory;
 
-  api.registerPlatform(PLATFORM_NAME, ExampleDynamicPlatform);
+  api.registerPlatform(PLATFORM_NAME, DomojaPlatform);
 };
 
-class ExampleDynamicPlatform implements DynamicPlatformPlugin {
+class DomojaPlatform implements DynamicPlatformPlugin {
 
   private readonly log: Logging;
   private readonly api: API;
@@ -63,7 +63,7 @@ class ExampleDynamicPlatform implements DynamicPlatformPlugin {
 
     // probably parse config or something here
 
-    log.info("Example platform finished initializing!");
+    log.info("Domoja platform finished initializing!");
 
     /*
      * When this event is fired, homebridge restored all cached accessories from disk and did call their respective
@@ -72,7 +72,7 @@ class ExampleDynamicPlatform implements DynamicPlatformPlugin {
      * This event can also be used to start discovery of new accessories.
      */
     api.on(APIEvent.DID_FINISH_LAUNCHING, () => {
-      log.info("Example platform 'didFinishLaunching'");
+      log.info("Domoja platform 'didFinishLaunching'");
 
       // The idea of this plugin is that we open a http service which exposes api calls to add or remove accessories
       this.createHttpService();
