@@ -3,6 +3,7 @@ import { Socket, io } from 'socket.io-client';
 import {
   API,
   APIEvent,
+  Characteristic,
   CharacteristicEventTypes,
   CharacteristicSetCallback,
   CharacteristicValue,
@@ -15,6 +16,8 @@ import {
   Service,
 } from "homebridge";
 import { Device, replaceDates } from "./device";
+import { AccessoryConfig, Config, StateMapping } from "./config";
+import checkConfig from "./checkConfig";
 
 const PLUGIN_NAME = "homebridge-domoja";
 const PLATFORM_NAME = "DomojaPlatform";
@@ -56,42 +59,47 @@ declare class GenericService extends Service {
   constructor(displayName?: string, subtype?: string);
 }
 
-
-function getService(serviceName: string): typeof GenericService | null {
+function getServiceFromConstructorName(serviceName: string): typeof GenericService | null {
   const service: typeof GenericService | null = (hap.Service as any)[serviceName];
   if (service && service.UUID) return service;
   return null;
 }
 
 function getAllServiceNames(): string[] {
-  return Object.keys(hap.Service).filter(key => getService(key));
+  return Object.keys(hap.Service).filter(key => getServiceFromConstructorName(key));
 }
 
-function getTransformedValue(transformSpec: AccessoryConfig["get"] | AccessoryConfig["set"], value: string | boolean | number): string | boolean | number {
-  if (transformSpec && transformSpec.mapping) {
-    for (let i = 0; i < transformSpec.mapping.length; i += 2) {
-      if (value.toString() === transformSpec.mapping[i].toString()) {
-        return transformSpec.mapping[i + 1];
-      }
+function deepEqual<T1, T2>(var1: T1, var2: T2): boolean {
+  const debug = false;
+  if (debug) if (var1 as any === var2 as any) console.log(`var1 as any === var2 as any =>`, true);
+  if (var1 as any === var2 as any) return true;
+  if (debug) if (typeof var1 !== typeof var2) console.log(`typeof var1 !== typeof var2 =>`, false);
+  if (typeof var1 !== typeof var2) return false;
+  if (debug) if (var1 === null || var2 === null) console.log(`var1 === null || var2 === null =>`, false);
+  if (var1 === null || var2 === null) return false;
+
+  if (typeof var1 === 'object' && typeof var2 === 'object') {
+    if (debug) console.log(`typeof var1 === 'object' && typeof var2 === 'object'`);
+    for (let key of Object.keys(var1).concat(Object.keys(var2))) {
+      if (debug) console.log(`key=`, key);
+      const val1 = (var1 as any)[key];
+      const val2 = (var2 as any)[key];
+      if (debug) if (val1 && !val2) console.log(`key=${key} val1 && !val2 => false`, val1, val2);
+      if (val1 && !val2) return false;
+      if (debug) if (!val1 && val2) console.log(`key=${key} !val1 && val2 => false`, val1, val2);
+      if (!val1 && val2) return false;
+      if (debug) if (val1 && val2) console.log(`key=${key} val1 && val2 => check deepEqual`);
+      if (val1 && val2 && !deepEqual(val1, val2)) return false;
+      if (debug) if (val1 && val2) console.log(`key=${key} val1 && val2 deepEqual was true`);
     }
+    if (debug) console.log(`All keys checked => true`);
+    return true;
   }
-  return value;
-}
-
-type AccessoryConfig = {
-  displayName: string;
-  serviceConstructorName: string;
-  characteristicName: string;
-  set?: {
-    mapping?: (string | number | boolean)[];
-  },
-  get?: {
-    mapping?: (string | number | boolean)[];
-  }
+  if (debug) console.log(`all checked val1=${var1} val2=${var2} => false`);
+  return false;
 }
 
 type AccessoryContext = {
-  path: string;
   config: AccessoryConfig;
 }
 
@@ -107,20 +115,28 @@ class DomojaPlatform implements DynamicPlatformPlugin {
   private socket?: Socket;
 
   private setCookie: string = '';
-  private url: string;
+  private url: string = '';
 
   private devices: Map<string, Device> = new Map();
 
   private devicesLoaded = false;
   private platformDidFinishLaunching = false;
 
-  constructor(log: Logging, config: PlatformConfig, api: API) {
+  constructor(log: Logging, __config: PlatformConfig, api: API) {
     this.log = log;
     this.api = api;
+
+    let _config = checkConfig(__config, this.log);
+
+    if (_config === false) {
+      this.log.error(`Wrong configuration, please fix and restart!`)
+      return;
+    };
+
+    const config = _config;
+
     this.url = config.url;
 
-    // probably parse config or something here
-    console.log(config);
 
     this.getCookiesFromLogin(config.url, config.auth.username, config.auth.password).then(setCookie => {
       if (setCookie === false) return; // error was logged previously
@@ -128,7 +144,7 @@ class DomojaPlatform implements DynamicPlatformPlugin {
       this.setCookie = setCookie;
 
       this.loadDevices(config.url, setCookie).then(() => {
-        this.loadAccessories();
+        this.loadAccessories(config);
         this.devicesLoaded = true;
         this.tryStartSocketToDomoja(config.url);
       });
@@ -239,18 +255,22 @@ class DomojaPlatform implements DynamicPlatformPlugin {
         return;
       }
 
-      let accessoriesWihThatName = this.accessories.filter(a => a.context.path === device.path);
-      if (accessoriesWihThatName.length === 0) {
-        this.log.debug(`Could not find accessory with path "${device.path}"!`);
-        return;
-      }
-      if (accessoriesWihThatName.length > 1) {
-        this.log.error(`Could find more than one accessory with path "${device.path}"! Found ${accessoriesWihThatName.length} accessories:`, accessoriesWihThatName);
-        return;
-      }
-      const accessory = accessoriesWihThatName[0];
+      let updated = false;
+      this.accessories.forEach(accessory => {
+        if (!accessory.context.config.disabled) {
+          accessory.context.config.services.forEach(service => {
+            service.characteristics.forEach(characteristic => {
+              if (characteristic.get && characteristic.get.device === device.path) {
+                if (!updated) this.log.debug(`Device state changed:`, value);
+                updated = true;
+                this.updateAccessoryCharacteristicFromDeviceState(accessory, service.serviceConstructorName, characteristic.characteristicName, value.newValue);
+              }
+            });
+          });
+        }
+      });
+      if (!updated) this.log.debug(`No accessory using device "${device.path}"!`);
 
-      this.updateAccessoryValue(accessory, value.newValue);
     });
     this.socket.on('connect', () => {
       this.log.info('Connected to domoja server');
@@ -268,77 +288,218 @@ class DomojaPlatform implements DynamicPlatformPlugin {
     });
   }
 
-  loadAccessories() {
+  loadAccessories(config: Config): void {
 
-    const configs = new Map<string, AccessoryConfig>([
-      ['piscine.temperature', {
-        displayName: 'Température piscine 3',
-        serviceConstructorName: hap.Service.TemperatureSensor.name,
-        characteristicName: "Current Temperature",
-      }],
-      ['aquarium.lampes', {
-        displayName: 'Lampes aquarium 3',
-        serviceConstructorName: hap.Service.Switch.name,
-        characteristicName: "On",
-        "get": {
-          "mapping": ["ON", true, "OFF", false]
-        },
-        "set": {
-          "mapping": [true, "ON", false, "OFF"]
-        },
-      }]
-    ]);
+    const cachedAccessories: PlatformAccessory<AccessoryContext>[] = this.accessories.slice();
+    this.accessories.splice(0);
 
     let countNew = 0;
     let countUpdated = 0;
-    for (let [path, config] of configs) {
-      const device = this.devices.get(path);
-      if (!device) {
-        this.log.warn(`While loading accessories: could not find device with path "${path}".`);
+    let countDisabled = 0;
+    let countUnchanged = 0;
+
+    config.accessoriesByServiceCharacteristic.forEach(ac => {
+      if ('devicesAndDisplayNames' in ac) {
+        // accessories by type, let's create one accessory per device
+        Object.keys(ac.devicesAndDisplayNames).forEach(devicePath => {
+          const device = this.devices.get(devicePath);
+
+          if (!device) {
+            this.log.warn(`While loading accessories: could not find device with path "${devicePath}".`);
+          } else {
+
+            const service = ac.service;
+            const characteristic = ac.characteristic;
+            const deviceAndSpecs = ac.devicesAndDisplayNames[devicePath];
+            const displayName = typeof deviceAndSpecs === 'string' ? deviceAndSpecs : deviceAndSpecs.displayName;
+            const accessoryConfig: AccessoryConfig = {
+              displayName: displayName,
+              disabled: ac.disabled !== undefined && ac.disabled !== false,
+              services: [{
+                serviceConstructorName: service,
+                characteristics: [{
+                  characteristicName: characteristic,
+                  get: { device: devicePath, ...ac.get },
+                  set: { device: devicePath, ...ac.set },
+                }]
+              }],
+            }
+
+            const existingAccessory = cachedAccessories.find(a =>
+              a.context.config.services.length === 1 &&
+              a.context.config.services[0].characteristics.length === 1 &&
+              a.context.config.services[0].characteristics[0].get &&
+              a.context.config.services[0].characteristics[0].get.device === devicePath);
+
+            const needUpdate = existingAccessory && !deepEqual(existingAccessory.context.config, accessoryConfig);
+
+            let accessory: PlatformAccessory<AccessoryContext> | undefined = undefined;
+            if (needUpdate) {
+              // configuration changed, let's recreate the accessory
+              this.log.debug(`In loadAccessories for ${displayName}.${service}.${characteristic}: change in configuration, must recreate the accessory (if not disabled).`);
+              this.api.unregisterPlatformAccessories(PLUGIN_NAME, PLATFORM_NAME, [existingAccessory]);
+              cachedAccessories.splice(cachedAccessories.findIndex(a => a === existingAccessory), 1);
+              if (!ac.disabled) {
+                countUpdated++;
+                this.log.debug(`In loadAccessories for ${displayName}.${service}.${characteristic}: change in configuration, recreating accessory.`);
+                accessory = this.addAccessory(accessoryConfig);
+              }
+            } else if (!existingAccessory) {
+              // a really new accessory
+              if (!ac.disabled) {
+                countNew++;
+                this.log.debug(`In loadAccessories for ${displayName}.${service}.${characteristic}: new accessory.`);
+                accessory = this.addAccessory(accessoryConfig);
+              }
+            } else {
+              this.log.debug(`In loadAccessories for ${displayName}.${service}.${characteristic}: accessory already exist, and no change detected.`);
+              accessory = existingAccessory;
+              this.accessories.push(accessory);
+              countUnchanged++;
+            }
+
+            if (!ac.disabled) {
+              if (!accessory) {
+                this.log.error(`Error in loadAccessories: no accessory created for ${displayName}.${service}.${characteristic}!`);
+              } else {
+                const get = accessoryConfig.services.find(s => s.serviceConstructorName === service)?.characteristics.find(c => c.characteristicName === characteristic)?.get;
+                if (get)
+                  this.updateAccessoryCharacteristicFromDeviceState(accessory, service, characteristic, device.state.toString());
+              }
+            } else {
+              countDisabled++;
+            }
+          }
+        });
       } else {
-        const existingAccessory = this.accessories.find(a => a.context.path === path);
+        // detailed accessory
 
-        const justUpdate = existingAccessory && JSON.stringify(existingAccessory.context.config) !== JSON.stringify(config);
+        const accessoryConfig: AccessoryConfig = {
+          displayName: ac.displayName,
+          disabled: ac.disabled !== undefined && ac.disabled !== false,
+          services: ac.services.map(s => ({
+            serviceConstructorName: s.service,
+            characteristics: s.characteristics.map(c => {
+              return ('device' in c) ? {
+                characteristicName: c.characteristic,
+                get: { device: c.device, ...c.get },
+                set: { device: c.device, ...c.set },
+              } : {
+                characteristicName: c.characteristic,
+                get: 'get' in c ? c.get : undefined,
+                set: 'set' in c ? c.set : undefined,
+              }
+            }),
+          })),
+        };
 
-        if (justUpdate) {
+        const existingAccessory = cachedAccessories.find(a => a.displayName === ac.displayName);
+
+        const needUpdate = existingAccessory && !deepEqual(existingAccessory.context.config, accessoryConfig);
+
+        let accessory: PlatformAccessory<AccessoryContext> | undefined = undefined;
+        if (needUpdate) {
           // configuration changed, let's recreate the accessory
-          countUpdated++;
           this.api.unregisterPlatformAccessories(PLUGIN_NAME, PLATFORM_NAME, [existingAccessory]);
-          this.accessories.splice(this.accessories.findIndex(a => a.context.path === path), 1);
-          this.addAccessory(device, config);
+          cachedAccessories.splice(cachedAccessories.findIndex(a => a === existingAccessory), 1);
+          if (!ac.disabled) {
+            countUpdated++;
+            this.log.debug(`In loadAccessories for ${ac.displayName}: change in configuration, recreating accessory (not disabled).`);
+            accessory = this.addAccessory(accessoryConfig);
+          }
         } else if (!existingAccessory) {
           // a really new accessory
-          countNew++;
-          this.addAccessory(device, config);
+          if (!ac.disabled) {
+            countNew++;
+            this.log.debug(`In loadAccessories for ${ac.displayName}: new accessory.`);
+            accessory = this.addAccessory(accessoryConfig);
+          }
+        } else {
+          this.log.debug(`In loadAccessories for ${ac.displayName}: accessory already exist, and no change detected.`);
+          accessory = existingAccessory;
+          this.accessories.push(accessory);
+          countUnchanged++;
         }
 
-        const accessory = this.accessories.find(a => a.context.path === path);
-        if (!accessory) this.log.error(`In loadAccessories, couldn't retrieve accessory "${path}" that we just added!`);
-        else this.updateAccessoryValue(accessory, device.state.toString());
+        if (!ac.disabled) {
+          if (!accessory) {
+            this.log.error(`Error in loadAccessories: no accessory created for ${ac.displayName}!`);
+          } else {
+            ac.services.forEach(s => {
+              s.characteristics.forEach(c => {
+                const device = ('device' in c) ? c.device : 'get' in c ? c.get.device : null;
+                if (device) {
+                  const d = this.devices.get(device);
+                  if (!d) {
+                    this.log.error(`Error in loadAccessories: for accessory ${ac.displayName}.${s.service}.${c.characteristic}, could not find device with path "${device}"!`);
+                  } else {
+                    this.log.debug(`About to update accessory ${ac.displayName}.${s.service}.${c.characteristic}, with device "${device}" state:`, d.state);
+                    this.updateAccessoryCharacteristicFromDeviceState(accessory!, s.service, c.characteristic, d.state.toString());
+                  }
+                } else {
+                  // no get defined, hence nothing to update (could be a set-only characteristic)
+                }
+              });
+            })
+          }
+        } else {
+          countDisabled++;
+        }
       }
-    };
+    });
 
-    this.log.info(`Loaded ${countNew} new accessory(ies) from configuration, ${countUpdated} updated.`);
+    // deregister unused accessories
+    const unusedAccessories = cachedAccessories.filter(a => !this.accessories.includes(a));
+    this.api.unregisterPlatformAccessories(PLUGIN_NAME, PLATFORM_NAME, unusedAccessories);
+
+    this.log.info(`Loaded ${countNew} new accessory(ies) from configuration, ${countUnchanged} unchanged, ${countUpdated} updated, ${countDisabled} disabled, ${unusedAccessories.length} removed.`);
   }
 
-  updateAccessoryValue(accessory: PlatformAccessory<AccessoryContext>, newValue: string) {
-    const service = accessory.getService(accessory.context.config.displayName);
+  resolveAccessoryServiceCharacteristic(accessory: PlatformAccessory<AccessoryContext>, serviceConstructorName: string, characteristicName: string): Characteristic | undefined {
+    const service1 = getServiceFromConstructorName(serviceConstructorName);
+    if (!service1) {
+      this.log.error(`Error in resolveAccessoryServiceCharacteristic "${accessory.displayName}.${serviceConstructorName}.${characteristicName}": serviceConstructorName not found!`);
+      return;
+    }
+    const service2 = accessory.getService(service1);
+    if (!service2) {
+      this.log.error(`Error in resolveAccessoryServiceCharacteristic "${accessory.displayName}.${serviceConstructorName}.${characteristicName}": service not found in accessory!`);
+      return;
+    }
+    const characteristic3 = service2.getCharacteristic(characteristicName);
+    if (!characteristic3) {
+      this.log.error(`Error in resolveAccessoryServiceCharacteristic "${accessory.displayName}.${serviceConstructorName}.${characteristicName}": characteristic not found!`);
+      return;
+    }
+    return characteristic3;
+  }
 
-    if (!service) {
-      this.log.error(`While trying to update value of accessory "${accessory.context.path}": cannot get service ${accessory.context.config.serviceConstructorName}!`);
-    } else {
-      let characteristic = service.getCharacteristic(accessory.context.config.characteristicName);
-      if (!characteristic) {
-        this.log.error(`While trying to update value of accessory "${accessory.context.path}": cannot get characteristic ${accessory.context.config.characteristicName}!`);
-      } else {
-        let transformedValue: number | string | boolean = getTransformedValue(accessory.context.config.get, newValue);
-        this.log.info(`${accessory.context.config.displayName} is now ${transformedValue}`);
-        characteristic.updateValue(transformedValue);
-      }
+  updateAccessoryCharacteristicFromDeviceState(accessory: PlatformAccessory<AccessoryContext>, serviceConstructorName: string, characteristicName: string, stateValue: string) {
+    this.log.debug(`Updating accessory "${accessory.displayName}.${serviceConstructorName}.${characteristicName}" with device state:`, stateValue);
+
+    const characteristic = this.resolveAccessoryServiceCharacteristic(accessory, serviceConstructorName, characteristicName);
+
+    if (!characteristic) {
+      this.log.error(`Error while preparing update of accessory "${accessory.displayName}.${serviceConstructorName}.${characteristicName}"!`);
+      return;
+    }
+
+    const characteristicConfig = accessory.context.config.services.filter(s => s.serviceConstructorName === serviceConstructorName)[0].characteristics.filter(c => c.characteristicName === characteristicName)[0];
+
+    if (!characteristicConfig.get) {
+      this.log.error(`Error updateAccessoryCharacteristicFromDeviceState should not be called when no get is defined, for accessory "${accessory.displayName}.${serviceConstructorName}.${characteristicName}"!`);
+      return;
+    }
+
+    let transformedValue: number | string | boolean | null = this.getTransformedValue(characteristicConfig.get, stateValue);
+    if (transformedValue !== null) {
+      this.log.info(`${accessory.context.config.displayName}.${serviceConstructorName}.${characteristicName} is now ${transformedValue}`);
+      characteristic.updateValue(transformedValue);
     }
   }
 
   async setDeviceValue(device: Device, value: string | boolean | number, callback: (err?: Error) => void) {
+    this.log.debug(`Setting device ${device.path} state to ${value}...`);
     try {
       const target = (this.url.endsWith('/') ? this.url : this.url + '/') + `devices/${device.path}`;
       const response = await fetch(target, {
@@ -377,78 +538,114 @@ class DomojaPlatform implements DynamicPlatformPlugin {
       this.log("%s identified!", accessory.displayName);
     });
 
-    const device = this.devices.get(accessory.context.path);
+    accessory.context.config.services.forEach(service => {
+      service.characteristics.forEach(characteristic => {
+        const characteristic2 = this.resolveAccessoryServiceCharacteristic(accessory, service.serviceConstructorName, characteristic.characteristicName);
 
-    const service = accessory.getService(accessory.context.config.displayName);
+        if (!characteristic2) {
+          this.log.error(`In configureAccessory: could not find characteristic "${characteristic.characteristicName}" of accessory "${accessory.displayName}"`);
+        } else {
 
-    if (!service) {
-      this.log.error(`In configureAccessory: could not find service "${accessory.context.config.serviceConstructorName}" of accessory "${accessory.context.path}"`);
-    } else {
-      const characteristic = service.getCharacteristic(accessory.context.config.characteristicName);
+          const set = characteristic.set;
+          if (!set) return; // no need to create a handler
 
-      if (!characteristic) {
-        this.log.error(`In configureAccessory: could not find characterisc "${accessory.context.config.characteristicName}" of accessory "${accessory.context.path}"`);
-      } else {
+          characteristic2.on(CharacteristicEventTypes.SET, (value: CharacteristicValue, callback: CharacteristicSetCallback) => {
+            const device = this.devices.get(set.device);
 
-        characteristic.on(CharacteristicEventTypes.SET, (value: CharacteristicValue, callback: CharacteristicSetCallback) => {
-          const device = this.devices.get(accessory.context.path);
-
-          if (!device) {
-            const error = `While setting ${accessory.context.config.displayName} to ${value}: no device found with path "${accessory.context.path}"!`;
-            this.log.error(error);
-            callback(new Error(error));
-          } else {
-            let transformedValue: number | string | boolean = getTransformedValue(accessory.context.config.set, value.toString());
-
-            this.setDeviceValue(device, transformedValue, (err) => {
-              if (err) {
-                this.log.warn(`${accessory.context.config.displayName} could not be set to ${value}:`, err);
-              } else {
-                this.log.info(`${accessory.context.config.displayName} was set to ${value}`);
-              }
-              callback(err);
-            });
-          }
-        });
-      }
-    }
+            if (!device) {
+              const error = `While setting ${accessory.context.config.displayName} to ${value}: no device found with path "${set.device}"!`;
+              this.log.error(error);
+              callback(new Error(error));
+            } else {
+              let transformedValue: number | string | boolean | null = this.getTransformedValue(set, value.toString());
+              if (transformedValue !== null) {
+                this.setDeviceValue(device, transformedValue, (err) => {
+                  if (err) {
+                    this.log.warn(`${accessory.context.config.displayName}.${service.serviceConstructorName}.${characteristic.characteristicName} could not be set to ${value}:`, err);
+                  } else {
+                    this.log.info(`${accessory.context.config.displayName}.${service.serviceConstructorName}.${characteristic.characteristicName} was set to ${value}`);
+                  }
+                  callback(err);
+                });
+              } else callback();
+            }
+          });
+        }
+      });
+    });
 
     this.accessories.push(accessory);
   }
 
   // --------------------------- CUSTOM METHODS ---------------------------
 
-  addAccessory(device: Device, config: AccessoryConfig) {
+  addAccessory(config: AccessoryConfig): PlatformAccessory<AccessoryContext> {
     this.log.info("Adding new accessory with name %s", config.displayName);
 
     // uuid must be generated from a unique but not changing data source, name should not be used in the most cases. But works in this specific example.
     const uuid = hap.uuid.generate(config.displayName);
     const accessory = new Accessory<AccessoryContext>(config.displayName, uuid);
 
-    accessory.context = { path: device.path, config };
+    accessory.context = { config };
 
-    const service = getService(config.serviceConstructorName);
+    config.services.forEach(serviceConfig => {
 
-    if (!service) {
-      this.log.error(`Service "${config.serviceConstructorName}" does not exist. Existing services: ${getAllServiceNames().join(', ')}.`);
-    } else {
-      accessory.addService(service, config.displayName);
-    }
+      const serviceConstructor = getServiceFromConstructorName(serviceConfig.serviceConstructorName);
 
-    // check that characteristic will be OK
-    const accService = accessory.getService(config.displayName);
-    if (!accService) this.log.error(`Error: service "${config.serviceConstructorName}" was just added to accessory "${config.displayName}" but could not be retrieved!`);
-    else {
-      const characteristic = accService.getCharacteristic(config.characteristicName);
-      if (!characteristic) {
-        this.log.error(`Characteristic "${config.characteristicName}" does not exist for service "${config.serviceConstructorName}"! Possible characteristics are: ${accService.characteristics.map(c => c.displayName).join(', ')}.`);
+      if (!serviceConstructor) {
+        this.log.error(`Service "${serviceConfig.serviceConstructorName}" does not exist. Existing services: ${getAllServiceNames().join(', ')}.`);
+        return;
+      } else {
+        if (accessory.getService(serviceConstructor)) {
+          this.log.error(`Service "${serviceConfig.serviceConstructorName}" already exist in accessory "${config.displayName}".`);
+          return;
+        }
       }
-    }
+      const service = accessory.addService(serviceConstructor, config.displayName);
+
+      serviceConfig.characteristics.forEach(characteristicConfig => {
+        // check that characteristic will be OK
+        const characteristic = service.getCharacteristic(characteristicConfig.characteristicName);
+        if (!characteristic) {
+          this.log.error(`Characteristic "${characteristicConfig.characteristicName}" does not exist for service "${serviceConfig.serviceConstructorName}"! Possible characteristics are: ${service.characteristics.map(c => c.displayName).join(', ')}.`);
+          this.log.error(`optionals:`, service.optionalCharacteristics);
+        }
+      });
+    });
 
     this.configureAccessory(accessory); // abusing the configureAccessory here
 
     this.api.registerPlatformAccessories(PLUGIN_NAME, PLATFORM_NAME, [accessory]);
+
+    return accessory;
   }
+
+  getTransformedValue(transformSpec: StateMapping | {}, value: string | boolean | number): string | boolean | number | null {
+    this.log.debug(`mapping:`, transformSpec);
+    this.log.debug(`value:`, value);
+
+    if ('mapping' in transformSpec) {
+      if (transformSpec.mapping.length % 2 != 0) this.log.warn(`Mapping "${transformSpec.mapping}" should have a pair length!`);
+      for (let i = 0; i < transformSpec.mapping.length; i += 2) {
+        const criteria = transformSpec.mapping[i];
+        if (criteria === null && value === null) {
+          this.log.debug(`transformedvalue:`, transformSpec.mapping[i + 1]);
+          return transformSpec.mapping[i + 1];
+        }
+        if (criteria !== null && value.toString() === criteria.toString()) {
+          this.log.debug(`transformedvalue:`, transformSpec.mapping[i + 1]);
+          return transformSpec.mapping[i + 1];
+        }
+        if (criteria === "*" && i === transformSpec.mapping.length - 2) {
+          this.log.debug(`transformedvalue:`, transformSpec.mapping[i + 1]);
+          return transformSpec.mapping[i + 1];
+        }
+      }
+    }
+    this.log.debug(`value not transformed:`, value);
+    return value;
+  }
+
 
   removeAccessories() {
     // we don't have any special identifiers, we just remove all our accessories

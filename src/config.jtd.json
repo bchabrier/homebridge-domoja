@@ -1,0 +1,492 @@
+{
+    "$schema": "http://json-schema.org/draft-07/schema#",
+    "additionalProperties": false,
+    "definitions": {
+        "BridgeConfiguration": {
+            "additionalProperties": false,
+            "properties": {
+                "advertiser": {
+                    "enum": [
+                        "avahi",
+                        "bonjour-hap",
+                        "ciao",
+                        "resolved"
+                    ],
+                    "type": "string"
+                },
+                "bind": {
+                    "anyOf": [
+                        {
+                            "items": {
+                                "type": "string"
+                            },
+                            "type": "array"
+                        },
+                        {
+                            "type": "string"
+                        }
+                    ]
+                },
+                "disableIpc": {
+                    "type": "boolean"
+                },
+                "manufacturer": {
+                    "type": "string"
+                },
+                "model": {
+                    "type": "string"
+                },
+                "name": {
+                    "type": "string"
+                },
+                "pin": {
+                    "type": "string"
+                },
+                "port": {
+                    "type": "number"
+                },
+                "setupID": {
+                    "type": "string"
+                },
+                "username": {
+                    "description": "Defines a mac address.\nMust have a format like 'XX:XX:XX:XX:XX:XX' with XX being a valid hexadecimal string",
+                    "type": "string"
+                }
+            },
+            "required": [
+                "name",
+                "pin",
+                "username"
+            ],
+            "type": "object"
+        }
+    },
+    "properties": {
+        "_bridge": {
+            "$ref": "#/definitions/BridgeConfiguration"
+        },
+        "accessoriesByServiceCharacteristic": {
+            "items": {
+                "anyOf": [
+                    {
+                        "additionalProperties": false,
+                        "properties": {
+                            "characteristic": {
+                                "type": "string"
+                            },
+                            "description": {
+                                "type": "string"
+                            },
+                            "devicesAndDisplayNames": {
+                                "additionalProperties": {
+                                    "anyOf": [
+                                        {
+                                            "additionalProperties": false,
+                                            "properties": {
+                                                "displayName": {
+                                                    "type": "string"
+                                                }
+                                            },
+                                            "required": [
+                                                "displayName"
+                                            ],
+                                            "type": "object"
+                                        },
+                                        {
+                                            "type": "string"
+                                        }
+                                    ]
+                                },
+                                "type": "object"
+                            },
+                            "disabled": {
+                                "type": "boolean"
+                            },
+                            "get": {
+                                "additionalProperties": false,
+                                "properties": {
+                                    "mapping": {
+                                        "items": {
+                                            "type": [
+                                                "null",
+                                                "string",
+                                                "number",
+                                                "boolean"
+                                            ]
+                                        },
+                                        "type": "array"
+                                    }
+                                },
+                                "required": [
+                                    "mapping"
+                                ],
+                                "type": "object"
+                            },
+                            "service": {
+                                "type": "string"
+                            },
+                            "set": {
+                                "additionalProperties": false,
+                                "properties": {
+                                    "mapping": {
+                                        "items": {
+                                            "type": [
+                                                "null",
+                                                "string",
+                                                "number",
+                                                "boolean"
+                                            ]
+                                        },
+                                        "type": "array"
+                                    }
+                                },
+                                "required": [
+                                    "mapping"
+                                ],
+                                "type": "object"
+                            }
+                        },
+                        "required": [
+                            "characteristic",
+                            "devicesAndDisplayNames",
+                            "service"
+                        ],
+                        "type": "object"
+                    },
+                    {
+                        "additionalProperties": false,
+                        "properties": {
+                            "description": {
+                                "type": "string"
+                            },
+                            "disabled": {
+                                "type": "boolean"
+                            },
+                            "displayName": {
+                                "type": "string"
+                            },
+                            "services": {
+                                "items": {
+                                    "additionalProperties": false,
+                                    "properties": {
+                                        "characteristics": {
+                                            "items": {
+                                                "anyOf": [
+                                                    {
+                                                        "additionalProperties": false,
+                                                        "properties": {
+                                                            "characteristic": {
+                                                                "type": "string"
+                                                            },
+                                                            "device": {
+                                                                "type": "string"
+                                                            },
+                                                            "get": {
+                                                                "additionalProperties": false,
+                                                                "properties": {
+                                                                    "mapping": {
+                                                                        "items": {
+                                                                            "type": [
+                                                                                "null",
+                                                                                "string",
+                                                                                "number",
+                                                                                "boolean"
+                                                                            ]
+                                                                        },
+                                                                        "type": "array"
+                                                                    }
+                                                                },
+                                                                "required": [
+                                                                    "mapping"
+                                                                ],
+                                                                "type": "object"
+                                                            },
+                                                            "set": {
+                                                                "additionalProperties": false,
+                                                                "properties": {
+                                                                    "mapping": {
+                                                                        "items": {
+                                                                            "type": [
+                                                                                "null",
+                                                                                "string",
+                                                                                "number",
+                                                                                "boolean"
+                                                                            ]
+                                                                        },
+                                                                        "type": "array"
+                                                                    }
+                                                                },
+                                                                "required": [
+                                                                    "mapping"
+                                                                ],
+                                                                "type": "object"
+                                                            }
+                                                        },
+                                                        "required": [
+                                                            "characteristic",
+                                                            "device"
+                                                        ],
+                                                        "type": "object"
+                                                    },
+                                                    {
+                                                        "additionalProperties": false,
+                                                        "properties": {
+                                                            "characteristic": {
+                                                                "type": "string"
+                                                            },
+                                                            "get": {
+                                                                "anyOf": [
+                                                                    {
+                                                                        "additionalProperties": false,
+                                                                        "properties": {
+                                                                            "device": {
+                                                                                "type": "string"
+                                                                            }
+                                                                        },
+                                                                        "required": [
+                                                                            "device"
+                                                                        ],
+                                                                        "type": "object"
+                                                                    },
+                                                                    {
+                                                                        "additionalProperties": false,
+                                                                        "properties": {
+                                                                            "device": {
+                                                                                "type": "string"
+                                                                            },
+                                                                            "mapping": {
+                                                                                "items": {
+                                                                                    "type": [
+                                                                                        "null",
+                                                                                        "string",
+                                                                                        "number",
+                                                                                        "boolean"
+                                                                                    ]
+                                                                                },
+                                                                                "type": "array"
+                                                                            }
+                                                                        },
+                                                                        "required": [
+                                                                            "device",
+                                                                            "mapping"
+                                                                        ],
+                                                                        "type": "object"
+                                                                    }
+                                                                ]
+                                                            },
+                                                            "set": {
+                                                                "anyOf": [
+                                                                    {
+                                                                        "additionalProperties": false,
+                                                                        "properties": {
+                                                                            "device": {
+                                                                                "type": "string"
+                                                                            }
+                                                                        },
+                                                                        "required": [
+                                                                            "device"
+                                                                        ],
+                                                                        "type": "object"
+                                                                    },
+                                                                    {
+                                                                        "additionalProperties": false,
+                                                                        "properties": {
+                                                                            "device": {
+                                                                                "type": "string"
+                                                                            },
+                                                                            "mapping": {
+                                                                                "items": {
+                                                                                    "type": [
+                                                                                        "null",
+                                                                                        "string",
+                                                                                        "number",
+                                                                                        "boolean"
+                                                                                    ]
+                                                                                },
+                                                                                "type": "array"
+                                                                            }
+                                                                        },
+                                                                        "required": [
+                                                                            "device",
+                                                                            "mapping"
+                                                                        ],
+                                                                        "type": "object"
+                                                                    }
+                                                                ]
+                                                            }
+                                                        },
+                                                        "required": [
+                                                            "characteristic",
+                                                            "get",
+                                                            "set"
+                                                        ],
+                                                        "type": "object"
+                                                    },
+                                                    {
+                                                        "additionalProperties": false,
+                                                        "properties": {
+                                                            "characteristic": {
+                                                                "type": "string"
+                                                            },
+                                                            "get": {
+                                                                "anyOf": [
+                                                                    {
+                                                                        "additionalProperties": false,
+                                                                        "properties": {
+                                                                            "device": {
+                                                                                "type": "string"
+                                                                            }
+                                                                        },
+                                                                        "required": [
+                                                                            "device"
+                                                                        ],
+                                                                        "type": "object"
+                                                                    },
+                                                                    {
+                                                                        "additionalProperties": false,
+                                                                        "properties": {
+                                                                            "device": {
+                                                                                "type": "string"
+                                                                            },
+                                                                            "mapping": {
+                                                                                "items": {
+                                                                                    "type": [
+                                                                                        "null",
+                                                                                        "string",
+                                                                                        "number",
+                                                                                        "boolean"
+                                                                                    ]
+                                                                                },
+                                                                                "type": "array"
+                                                                            }
+                                                                        },
+                                                                        "required": [
+                                                                            "device",
+                                                                            "mapping"
+                                                                        ],
+                                                                        "type": "object"
+                                                                    }
+                                                                ]
+                                                            }
+                                                        },
+                                                        "required": [
+                                                            "characteristic",
+                                                            "get"
+                                                        ],
+                                                        "type": "object"
+                                                    },
+                                                    {
+                                                        "additionalProperties": false,
+                                                        "properties": {
+                                                            "characteristic": {
+                                                                "type": "string"
+                                                            },
+                                                            "set": {
+                                                                "anyOf": [
+                                                                    {
+                                                                        "additionalProperties": false,
+                                                                        "properties": {
+                                                                            "device": {
+                                                                                "type": "string"
+                                                                            }
+                                                                        },
+                                                                        "required": [
+                                                                            "device"
+                                                                        ],
+                                                                        "type": "object"
+                                                                    },
+                                                                    {
+                                                                        "additionalProperties": false,
+                                                                        "properties": {
+                                                                            "device": {
+                                                                                "type": "string"
+                                                                            },
+                                                                            "mapping": {
+                                                                                "items": {
+                                                                                    "type": [
+                                                                                        "null",
+                                                                                        "string",
+                                                                                        "number",
+                                                                                        "boolean"
+                                                                                    ]
+                                                                                },
+                                                                                "type": "array"
+                                                                            }
+                                                                        },
+                                                                        "required": [
+                                                                            "device",
+                                                                            "mapping"
+                                                                        ],
+                                                                        "type": "object"
+                                                                    }
+                                                                ]
+                                                            }
+                                                        },
+                                                        "required": [
+                                                            "characteristic",
+                                                            "set"
+                                                        ],
+                                                        "type": "object"
+                                                    }
+                                                ]
+                                            },
+                                            "type": "array"
+                                        },
+                                        "service": {
+                                            "type": "string"
+                                        }
+                                    },
+                                    "required": [
+                                        "characteristics",
+                                        "service"
+                                    ],
+                                    "type": "object"
+                                },
+                                "type": "array"
+                            }
+                        },
+                        "required": [
+                            "displayName",
+                            "services"
+                        ],
+                        "type": "object"
+                    }
+                ]
+            },
+            "type": "array"
+        },
+        "auth": {
+            "additionalProperties": false,
+            "properties": {
+                "password": {
+                    "type": "string"
+                },
+                "username": {
+                    "type": "string"
+                }
+            },
+            "required": [
+                "password",
+                "username"
+            ],
+            "type": "object"
+        },
+        "name": {
+            "type": "string"
+        },
+        "platform": {
+            "type": "string"
+        },
+        "url": {
+            "type": "string"
+        }
+    },
+    "required": [
+        "accessoriesByServiceCharacteristic",
+        "auth",
+        "platform",
+        "url"
+    ],
+    "type": "object"
+}
+
