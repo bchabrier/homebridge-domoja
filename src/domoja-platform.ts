@@ -176,7 +176,7 @@ class DomojaPlatform implements DynamicPlatformPlugin {
         headers: {
           'Content-Type': 'application/x-www-form-urlencoded',
         },
-        body: `username=${encodeURIComponent(username)}&password=${encodeURIComponent(password)}&remember_me=false`,
+        body: `username=${encodeURIComponent(username)}&password=${encodeURIComponent(password)}&remember_me=true`,
       });
 
       const text = await response.text(); // unused, just ensure the response is complete
@@ -185,7 +185,22 @@ class DomojaPlatform implements DynamicPlatformPlugin {
 
       if (setCookie) {
         this.log.info(`Logged in to domoja server`);
-        return setCookie.split(';')[0];
+
+        // setCookie in the form:
+        // remember_me=YwqEFCBdzTkCdNHrwcv5XLMrm4mxlX3JlzipsUIhNxFAzvHNivgobjXOgzxFXH25; Max-Age=604800; Path=/; Expires=Mon, 11 Dec 2023 14:29:28 GMT; HttpOnly, connect.sid=s%3AxsjuwzBEeWp1Mq4daDKuxiDMKptgCobc.Iu2ABKTaMtPpNgdUuXKiXi%2FhlYXSfgGwgt4uFiso%2FdQ; Path=/; HttpOnly
+        // cookie in the form:
+        // remember_me=YwqEFCBdzTkCdNHrwcv5XLMrm4mxlX3JlzipsUIhNxFAzvHNivgobjXOgzxFXH25; connect.sid=s%3AxsjuwzBEeWp1Mq4daDKuxiDMKptgCobc.Iu2ABKTaMtPpNgdUuXKiXi%2FhlYXSfgGwgt4uFiso%2FdQ
+
+        const re = /(?:^| )(?:([^=]+=[^;]*;)(?: [^=,]+=[^;]*;)+ [^,]+,?)/g;
+        // finds the name=value; patterns
+
+        const cookies: string[] = [];
+        let match: RegExpExecArray | null;
+        while (match = re.exec(setCookie)) {
+          cookies.push(match[1]);
+        }
+
+        return cookies.join(' ');
       }
 
       this.log.error("Cannot connect to domoja server for login:", response.status, response.statusText);
