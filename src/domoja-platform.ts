@@ -22,9 +22,6 @@ import checkConfig from "./checkConfig";
 const PLUGIN_NAME = "homebridge-domoja";
 const PLATFORM_NAME = "DomojaPlatform";
 
-const maxLoggedLoginRetries = 2;
-const delayBetweenLoginAttempts = 10; // in seconds
-
 /*
  * IMPORTANT NOTICE
  *
@@ -119,6 +116,8 @@ class DomojaPlatform implements DynamicPlatformPlugin {
 
   private setCookie: string = '';
   private url: string = '';
+  private username: string = '';
+  private password: string = '';
 
   private devices: Map<string, Device> = new Map();
 
@@ -139,17 +138,16 @@ class DomojaPlatform implements DynamicPlatformPlugin {
     const config = _config;
 
     this.url = config.url;
+    this.username = config.auth.username;
+    this.password = config.auth.password;
 
+    this.login().then(done => {
+      if (false) return; // error was logged previously
 
-    this.getCookiesFromLogin(config.url, config.auth.username, config.auth.password).then(setCookie => {
-      if (setCookie === false) return; // error was logged previously
-
-      this.setCookie = setCookie;
-
-      this.loadDevices(config.url, setCookie).then(() => {
+      this.loadDevices().then(() => {
         this.loadAccessories(config);
         this.devicesLoaded = true;
-        this.tryStartSocketToDomoja(config.url);
+        this.tryStartSocketToDomoja();
       });
     });
 
@@ -165,86 +163,115 @@ class DomojaPlatform implements DynamicPlatformPlugin {
       log.info("Domoja platform 'didFinishLaunching'");
 
       this.platformDidFinishLaunching = true;
-      this.tryStartSocketToDomoja(config.url);
+      this.tryStartSocketToDomoja();
 
     });
   }
+  /**
+   * 
+   * @param options 
+   *     controls how login is done
+   *    
+   *     timeout: 0,                     // 0 means forever
+   *     delayBetweenLoginAttempts: 10,  // in seconds 
+   *     maxLoggedLoginRetries: 2,       // further retries are done silently
+   * @returns 
+   */
+  async login(options = {
+    timeout: 0,                     // 0 means forever
+    delayBetweenLoginAttempts: 10,  // in seconds 
+    maxLoggedLoginRetries: 2,       // further retries are done silently
+  }): Promise<boolean> {
 
-  silentLogin = false;
-  loginRetry = 0;
-  async getCookiesFromLogin(url: string, username: string, password: string): Promise<string | false> {
-    this.loginRetry >= 1 && this.loginRetry <= maxLoggedLoginRetries && this.log.warn(`Retrying connection to domoja server ${this.loginRetry}/${maxLoggedLoginRetries}...`);
-    this.loginRetry++;
-    try {
-      const target = (url.endsWith('/') ? url : url + '/') + "login.html";
-      const response = await fetch(target, {
-        method: 'POST',
-        redirect: "manual",
-        headers: {
-          'Content-Type': 'application/x-www-form-urlencoded',
-        },
-        body: `username=${encodeURIComponent(username)}&password=${encodeURIComponent(password)}&remember_me=true`,
-      });
+    const startTime = Date.now();
+    const checkTimeout: () => boolean = () => {
+      if (options.timeout && Date.now() - startTime > options.timeout * 1000) {
+        this.log.warn(`Timeout while trying to connect to domoja server after ${loginRetry} retries...`);
+        return false;
+      }
+      return true;
+    }
 
-      const text = await response.text(); // unused, just ensure the response is complete
+    let silentLogin = false;
+    let loginRetry = 0;
+    const doLogin = async (url: string, username: string, password: string): Promise<boolean> => {
 
-      const setCookie = response.headers.get('Set-Cookie');
+      loginRetry >= 1 && loginRetry <= options.maxLoggedLoginRetries && this.log.warn(`Retrying connection to domoja server ${loginRetry}/${options.maxLoggedLoginRetries}...`);
+      loginRetry++;
+      try {
+        const target = (url.endsWith('/') ? url : url + '/') + "login.html";
+        const response = await fetch(target, {
+          method: 'POST',
+          redirect: "manual",
+          headers: {
+            'Content-Type': 'application/x-www-form-urlencoded',
+          },
+          body: `username=${encodeURIComponent(username)}&password=${encodeURIComponent(password)}&remember_me=true`,
+        });
 
-      if (setCookie) {
-        this.loginRetry > 1 && this.log.warn(`Successful connection to domoja server after ${this.loginRetry} retries!`);
-        this.loginRetry = 0;
-        this.silentLogin = false;
-        this.log.info(`Logged in to domoja server`);
+        const text = await response.text(); // unused, just ensure the response is complete
 
-        // setCookie in the form:
-        // remember_me=YwqEFCBdzTkCdNHrwcv5XLMrm4mxlX3JlzipsUIhNxFAzvHNivgobjXOgzxFXH25; Max-Age=604800; Path=/; Expires=Mon, 11 Dec 2023 14:29:28 GMT; HttpOnly, connect.sid=s%3AxsjuwzBEeWp1Mq4daDKuxiDMKptgCobc.Iu2ABKTaMtPpNgdUuXKiXi%2FhlYXSfgGwgt4uFiso%2FdQ; Path=/; HttpOnly
-        // cookie in the form:
-        // remember_me=YwqEFCBdzTkCdNHrwcv5XLMrm4mxlX3JlzipsUIhNxFAzvHNivgobjXOgzxFXH25; connect.sid=s%3AxsjuwzBEeWp1Mq4daDKuxiDMKptgCobc.Iu2ABKTaMtPpNgdUuXKiXi%2FhlYXSfgGwgt4uFiso%2FdQ
+        const setCookie = response.headers.get('Set-Cookie');
 
-        const re = /(?:^| )(?:([^=]+=[^;]*;)(?: [^=,]+=[^;]*;)+ [^,]+,?)/g;
-        // finds the name=value; patterns
+        if (setCookie) {
+          loginRetry > 1 && this.log.warn(`Successful connection to domoja server after ${loginRetry} retries!`);
+          loginRetry = 0;
+          silentLogin = false;
+          this.log.info(`Logged in to domoja server`);
 
-        const cookies: string[] = [];
-        let match: RegExpExecArray | null;
-        while (match = re.exec(setCookie)) {
-          cookies.push(match[1]);
+          // setCookie in the form:
+          // remember_me=YwqEFCBdzTkCdNHrwcv5XLMrm4mxlX3JlzipsUIhNxFAzvHNivgobjXOgzxFXH25; Max-Age=604800; Path=/; Expires=Mon, 11 Dec 2023 14:29:28 GMT; HttpOnly, connect.sid=s%3AxsjuwzBEeWp1Mq4daDKuxiDMKptgCobc.Iu2ABKTaMtPpNgdUuXKiXi%2FhlYXSfgGwgt4uFiso%2FdQ; Path=/; HttpOnly
+          // cookie in the form:
+          // remember_me=YwqEFCBdzTkCdNHrwcv5XLMrm4mxlX3JlzipsUIhNxFAzvHNivgobjXOgzxFXH25; connect.sid=s%3AxsjuwzBEeWp1Mq4daDKuxiDMKptgCobc.Iu2ABKTaMtPpNgdUuXKiXi%2FhlYXSfgGwgt4uFiso%2FdQ
+
+          const re = /(?:^| )(?:([^=]+=[^;]*;)(?: [^=,]+=[^;]*;)+ [^,]+,?)/g;
+          // finds the name=value; patterns
+
+          const cookies: string[] = [];
+          let match: RegExpExecArray | null;
+          while (match = re.exec(setCookie)) {
+            cookies.push(match[1]);
+          }
+
+          this.setCookie = cookies.join(' ');
+          return true;
         }
 
-        return cookies.join(' ');
-      }
+        if (!silentLogin) {
+          if (loginRetry <= options.maxLoggedLoginRetries) {
+            this.log.warn("Cannot connect to domoja server for login, will retry in ${delayBetweenLoginAttempts} seconds:", response.status, response.statusText);
+          } else {
+            this.log.warn(`Could not connect for ${options.maxLoggedLoginRetries} to domoja server for login, continuing silently:`, response.status, response.statusText);
+          }
+        }
+        return new Promise<boolean>(async (resolve, reject) => {
+          setTimeout(() => resolve(checkTimeout() && doLogin(url, username, password)), options.delayBetweenLoginAttempts * 1000);
+        });
+      } catch (error) {
+        if (!silentLogin) {
+          if (loginRetry <= options.maxLoggedLoginRetries) {
+            this.log.warn("Cannot connect to domoja server for login, will retry in ${delayBetweenLoginAttempts} seconds:", error);
+          } else {
+            this.log.warn(`Could not connect for ${options.maxLoggedLoginRetries} times to domoja server for login, continuing silently:`, error);
+            silentLogin = true;
+          }
+        }
+        return new Promise<boolean>(async (resolve, reject) => {
+          setTimeout(() => resolve(checkTimeout() && doLogin(url, username, password)), options.delayBetweenLoginAttempts * 1000);
+        });
+      };
+    }
 
-      if (!this.silentLogin) {
-        if (this.loginRetry <= maxLoggedLoginRetries) {
-          this.log.warn("Cannot connect to domoja server for login, will retry in ${delayBetweenLoginAttempts} seconds:", response.status, response.statusText);
-        } else {
-          this.log.warn(`Could not connect for ${maxLoggedLoginRetries} to domoja server for login, continuing silently:`, response.status, response.statusText);
-        }
-      }
-      return new Promise<string | false>(async (resolve, reject) => {
-        setTimeout(() => resolve(this.getCookiesFromLogin(url, username, password)), delayBetweenLoginAttempts * 1000);
-      });
-    } catch (error) {
-      if (!this.silentLogin) {
-        if (this.loginRetry <= maxLoggedLoginRetries) {
-          this.log.warn("Cannot connect to domoja server for login, will retry in ${delayBetweenLoginAttempts} seconds:", error);
-        } else {
-          this.log.warn(`Could not connect for ${maxLoggedLoginRetries} times to domoja server for login, continuing silently:`, error);
-          this.silentLogin = true;
-        }
-      }
-      return new Promise<string | false>(async (resolve, reject) => {
-        setTimeout(() => resolve(this.getCookiesFromLogin(url, username, password)), delayBetweenLoginAttempts * 1000);
-      });
-    };
+    return doLogin(this.url, this.username, this.password);
   }
 
-  async loadDevices(url: string, cookies: string): Promise<void> {
+  async loadDevices(): Promise<void> {
     let devices: Device[] = [];
     try {
-      const target = (url.endsWith('/') ? url : url + '/') + "devices";
+      const target = (this.url.endsWith('/') ? this.url : this.url + '/') + "devices";
       const response = await fetch(target, {
         headers: {
-          "Cookie": cookies
+          "Cookie": this.setCookie
         }
       });
 
@@ -267,16 +294,16 @@ class DomojaPlatform implements DynamicPlatformPlugin {
 
   }
 
-  tryStartSocketToDomoja(url: string) {
+  tryStartSocketToDomoja() {
 
     if (!this.devicesLoaded) return;
     if (!this.platformDidFinishLaunching) return;
 
-    this.log.info(`Establishing socket connection to domoja server`, url);
+    this.log.info(`Establishing socket connection to domoja server`, this.url);
 
-    this.socket = io(url, {
+    this.socket = io(this.url, {
       extraHeaders: {
-        'Referer': url,
+        'Referer': this.url,
         cookie: this.setCookie
       }
     });
@@ -539,33 +566,47 @@ class DomojaPlatform implements DynamicPlatformPlugin {
     }
   }
 
-  async setDeviceValue(device: Device, value: string | boolean | number, callback: (err?: Error) => void) {
-    this.log.debug(`Setting device ${device.path} state to ${value}...`);
-    try {
-      const target = (this.url.endsWith('/') ? this.url : this.url + '/') + `devices/${device.path}`;
-      const response = await fetch(target, {
-        method: 'POST',
-        headers: {
-          "Cookie": this.setCookie,
-          'Content-Type': 'application/x-www-form-urlencoded',
-        },
-        body: `command=${encodeURIComponent(value)}`,
-      });
+  async setDeviceValue(device: Device, value: string | boolean | number, callback: (err?: Error) => void): Promise<void> {
+    let retry = 0;
 
-      const text = await response.text(); // unused, just ensure the response is complete
+    const trySetDeviceValue: (device: Device, value: string | boolean | number, callback: (err?: Error) => void) => Promise<void> = async (device: Device, value: string | boolean | number, callback: (err?: Error) => void) => {
+      this.log.debug(`Setting device ${device.path} state to ${value}...`);
+      try {
+        const target = (this.url.endsWith('/') ? this.url : this.url + '/') + `devices/${device.path}`;
+        const response = await fetch(target, {
+          method: 'POST',
+          headers: {
+            "Cookie": this.setCookie,
+            'Content-Type': 'application/x-www-form-urlencoded',
+          },
+          body: `command=${encodeURIComponent(value)}`,
+        });
 
-      if (text === 'OK') {
-        this.log.debug(`Device ${device.path} state set to ${value}`);
-        callback();
-      } else {
-        this.log.error(`Cannot connect to domoja server to setDeviceValue (${device.path}: ${value}), got response.text="${text}":`, response.status, response.statusText);
-        callback(new Error(`${response.status}  ${response.statusText}`));
-      }
+        const text = await response.text(); // unused, just ensure the response is complete
 
-    } catch (error) {
-      this.log.error(`Cannot connect to domoja server to setDeviceValue (${device.path}: ${value}):`, error);
-      callback(error as Error);
-    };
+        if (text === 'OK') {
+          this.log.debug(`Device ${device.path} state set to ${value}`);
+          callback();
+        } else {
+          if (response.status === 401 && retry === 0) {
+            this.log.debug(`Cannot connect to domoja server to setDeviceValue (${device.path}: ${value}), retrying with login first...`);
+            const logged = await this.login({ timeout: 10, delayBetweenLoginAttempts: 0, maxLoggedLoginRetries: 0 });
+            if (logged) {
+              retry++;
+              return await trySetDeviceValue(device, value, callback);
+            }
+          }
+          this.log.error(`Cannot connect to domoja server to setDeviceValue (${device.path}: ${value}) ${retry ? "after retry" : ""}, got response.text="${text}":`, response.status, response.statusText);
+          callback(new Error(`${response.status}  ${response.statusText}`));
+        }
+
+      } catch (error) {
+        this.log.error(`Cannot connect to domoja server to setDeviceValue (${device.path}: ${value}):`, error);
+        callback(error as Error);
+      };
+    }
+
+    return trySetDeviceValue(device, value, callback);
   }
 
   /*
