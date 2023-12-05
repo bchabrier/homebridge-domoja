@@ -1,68 +1,92 @@
-# homebridge-examples
+# homebridge-domoja
 
-This repo bundles some example implementations for homebridge plugins. They provide some example code to get 
-started with. They are also published on npm like regular plugins, so you can easily run them in your local
-homebridge instance. Refer to the respective `package.json` for the plugin name and install them as usual.
+This Homebridge plugin adds devices managed by [domoja](https://www.npmjs.com/package/domoja) to Homekit.
 
-The examples are all written in Typescript and thus require at least homebridge `v1.0.0`.  
-To build a plugin run the following commands in the respective plugin directory.
+## Configuration file
 
-Run this command once to install all dependencies required by the plugin:
+### Sample configuration file:
 ```
-npm install
-``` 
-
-After that run the following command to compile the Typescript files into Javascript
-(repeat this step every time you change something in the code).
+  "platforms": [
+    {
+      "platform": "DomojaPlatform",
+      "url": "http://domoja.server.url/",
+      "auth": {
+        "username": "XXXXX",
+        "password": "XXXXX"
+      },
+      "accessoriesByServiceCharacteristic": [ 
+        {
+          "description": "Detailed accessory description",
+          "displayName": "Grand Portail",
+          "services": [
+            {
+              "service": "GarageDoorOpener",
+              "characteristics" : [
+                { 
+                  "characteristic" : "Target Door State",
+                  "get": {
+                    "device": "portails.grand_portail.état",
+                    "mapping": ["Ouvert", 0, "Fermé", 1, "Entrouvert", null, "*", null]
+                  },
+                  "set": {
+                    "device": "portails.grand_portail.grand",
+                    "mapping": [1, "impulse", 0, "impulse"]
+                  }
+                },
+                { 
+                  "characteristic" : "Current Door State",
+                  "get": {
+                    "device": "portails.grand_portail.état",
+                    "mapping": ["Ouvert", 0, "Fermé", 1, "Entrouvert", null]
+                  }
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "description": "Motion sensor type accessories",
+          "service": "MotionSensor",
+          "characteristic": "Motion Detected",
+          "get": {
+            "mapping": ["ON", true, "OFF", false]
+          },
+          "devicesAndDisplayNames": {
+            "hall": "Hall",
+            "cuisine": "Cuisine",
+            "escalier": "Escalier",
+            "bureau": "Bureau",
+            "salle_a_manger": "Salle à manger"
+          }  
+        }
+      ]
+    }
+  ],
 ```
-npm run build
-```
+### Authentication
+
+The `auth` block contains the credentials of the user.
+
+### Accessories
+
+Accessories can be configured through two different ways:
+
+- by detailed configuration:
+
+    Here only one accessory is described, service by service, and for each service, characteristic by characteristic. 
+
+- by type: 
+
+    Here an accessory type is defined, with once service and one characteristic in this service only, and then associated to several domoja devices, thus configuring several accessories at once.
+
+Services are refered by their constructor name (the service name with no separating blanks), while characteristics are refered by their name.
+
+The list of available services and associated characteristics can be found [here](https://github.com/brutella/hap/blob/master/service/README.md).
+
+### `get` and `set`
+Characteristics take their value from a domoja device state. Reversely, setting a characteristic value can set a device state. Which device state to set or get is defined by the `set` and `get` blocks.
+
+### `mapping`
+If a characteristic value needs to be transformed into a device state, and vice-versa, then a `mapping` block can be defined. It consists in an array of values. The array has a pair length. Each value is followed by its transformed value. A `null` transformed value means that no transformed value will be used (i.e., the characteristic will not be updated - in a `get` block -, or the device state will not be set - in a `set` block -).
 
 
-If you're trying to get one of the example plugins to show up in your homebridge installation without installing it
-from npm just clone this repo.
-Then, just cd into one of the plugin folders and run
-```
-sudo hb-service link
-```
-This creates a symlink from the plugin directory to /var/lib/homebridge/node_modules/plugin_name.
-
-To undo this run
-```
-sudo hb-service unlink
-```
-
-Pay attention to not start homebridge with the --strict-plugin-resolution flag. A standard installation of 
-homebridge might start it with that flag in a start script, located in /opt/homebridge on linux.
-
-
-If you need inspiration for a plugin written in Javascript you can just run the above commands and look at the 
-generated Javascript code located in the `./dist` folder. You may need to ignore some code at the beginning of the file 
-generated by the Typescript compiler.
-
-## Examples for different homebridge plugin types
-
-#### Accessory Plugins
-
-Accessory plugins are the most basic and simplest plugins for homebridge. They should be used if you only want to 
-expose a single accessory and don't require any special functionality.
-
-* [Accessory Plugin](./accessory-example-typescript): A simple Switch accessory.
-
-#### Platform Plugins:
-
-Platform plugins are able to expose multiple accessories. Additionally, they are required if you want to use the 
-Controller API. 
-
-* [Static Platform Plugin](./static-platform-example-typescript): Static platforms know which accessories they want to 
-expose on start up. The set of accessories cannot change over the lifespan of the plugin.
-* [Dynamic Platform Plugin](./dynamic-platform-example-typescript): Dynamic platforms can dynamically add or remove 
-accessories at runtime. Accessories are fully stored to disk by homebridge, and the exact state is reconstructed on
-a reboot. The plugin can store additional context as well. 
-* [Independent Platform Plugin](./independent-platform-example-typescript): Independent platforms are typically used
-when the platform intends to only expose external accessories or provides other functionality while not exposing
-an accessory at all.
-
-## Other example plugins
-
-* [Bridged Camera Platform](./bridged-camera-example-typescript)

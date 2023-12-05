@@ -27,10 +27,10 @@
   ],
   "repository": {
     "type": "git",
-    "url": "git://github.com/homebridge/homebridge-examples.git"
+    "url": "git://github.com/homebridge/homebridge-domoja.git"
   },
   "bugs": {
-    "url": "https://github.com/homebridge/homebridge-examples/issues"
+    "url": "https://github.com/homebridge/homebridge-domoja/issues"
   },
   "devDependencies": {
     "@types/node": "^20.10.0",
