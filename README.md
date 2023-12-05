@@ -14,7 +14,7 @@ This Homebridge plugin adds devices managed by [domoja](https://www.npmjs.com/pa
         "username": "XXXXX",
         "password": "XXXXX"
       },
-      "accessoriesByServiceCharacteristic": [ 
+      "accessories": [ 
         {
           "description": "Detailed accessory description",
           "displayName": "Grand Portail",

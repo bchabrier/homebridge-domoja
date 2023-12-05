@@ -68,5 +68,5 @@ export type Config = PlatformConfig & {
         username: string;
         password: string;
     };
-    accessoriesByServiceCharacteristic: (AccessoriesByServiceCharacteristic | DetailedAccessory)[];
+    accessories: (AccessoriesByServiceCharacteristic | DetailedAccessory)[];
 };

@@ -65,7 +65,7 @@
         "_bridge": {
             "$ref": "#/definitions/BridgeConfiguration"
         },
-        "accessoriesByServiceCharacteristic": {
+        "accessories": {
             "items": {
                 "anyOf": [
                     {
@@ -482,7 +482,7 @@
         }
     },
     "required": [
-        "accessoriesByServiceCharacteristic",
+        "accessories",
         "auth",
         "platform",
         "url"

@@ -371,7 +371,7 @@ class DomojaPlatform implements DynamicPlatformPlugin {
     let countDisabled = 0;
     let countUnchanged = 0;
 
-    config.accessoriesByServiceCharacteristic.forEach(ac => {
+    config.accessories.forEach(ac => {
       if ('devicesAndDisplayNames' in ac) {
         // accessories by type, let's create one accessory per device
         Object.keys(ac.devicesAndDisplayNames).forEach(devicePath => {
