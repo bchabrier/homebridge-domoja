@@ -347,7 +347,12 @@ class DomojaPlatform implements DynamicPlatformPlugin {
       console.log('message', message);
     });
     this.socket.on('connect_error', (error: any) => {
-      this.log.error('connect_error with connection to domoja server:', error);
+      if (error.description === '401') {
+        this.log.warn(`connect_error 401 with connection to domoja server, let's login again!`);
+        this.login();
+      } else {
+        this.log.error('connect_error with connection to domoja server:', error);
+      }
     });
     this.socket.on('error', (error: any) => {
       this.log.error('error with socket to domoja server:', error);
