@@ -22,6 +22,9 @@ import checkConfig from "./checkConfig";
 const PLUGIN_NAME = "homebridge-domoja";
 const PLATFORM_NAME = "DomojaPlatform";
 
+const maxLoggedLoginRetries = 2;
+const delayBetweenLoginAttempts = 10; // in seconds
+
 /*
  * IMPORTANT NOTICE
  *
@@ -167,7 +170,11 @@ class DomojaPlatform implements DynamicPlatformPlugin {
     });
   }
 
+  silentLogin = false;
+  loginRetry = 0;
   async getCookiesFromLogin(url: string, username: string, password: string): Promise<string | false> {
+    this.loginRetry >= 1 && this.loginRetry <= maxLoggedLoginRetries && this.log.warn(`Retrying connection to domoja server ${this.loginRetry}/${maxLoggedLoginRetries}...`);
+    this.loginRetry++;
     try {
       const target = (url.endsWith('/') ? url : url + '/') + "login.html";
       const response = await fetch(target, {
@@ -184,6 +191,9 @@ class DomojaPlatform implements DynamicPlatformPlugin {
       const setCookie = response.headers.get('Set-Cookie');
 
       if (setCookie) {
+        this.loginRetry > 1 && this.log.warn(`Successful connection to domoja server after ${this.loginRetry} retries!`);
+        this.loginRetry = 0;
+        this.silentLogin = false;
         this.log.info(`Logged in to domoja server`);
 
         // setCookie in the form:
@@ -203,13 +213,29 @@ class DomojaPlatform implements DynamicPlatformPlugin {
         return cookies.join(' ');
       }
 
-      this.log.error("Cannot connect to domoja server for login:", response.status, response.statusText);
-      return false;
-
+      if (!this.silentLogin) {
+        if (this.loginRetry <= maxLoggedLoginRetries) {
+          this.log.warn("Cannot connect to domoja server for login, will retry in ${delayBetweenLoginAttempts} seconds:", response.status, response.statusText);
+        } else {
+          this.log.warn(`Could not connect for ${maxLoggedLoginRetries} to domoja server for login, continuing silently:`, response.status, response.statusText);
+        }
+      }
+      return new Promise<string | false>(async (resolve, reject) => {
+        setTimeout(() => resolve(this.getCookiesFromLogin(url, username, password)), delayBetweenLoginAttempts * 1000);
+      });
     } catch (error) {
-      this.log.error("Cannot connect to domoja server for login:", error);
+      if (!this.silentLogin) {
+        if (this.loginRetry <= maxLoggedLoginRetries) {
+          this.log.warn("Cannot connect to domoja server for login, will retry in ${delayBetweenLoginAttempts} seconds:", error);
+        } else {
+          this.log.warn(`Could not connect for ${maxLoggedLoginRetries} times to domoja server for login, continuing silently:`, error);
+          this.silentLogin = true;
+        }
+      }
+      return new Promise<string | false>(async (resolve, reject) => {
+        setTimeout(() => resolve(this.getCookiesFromLogin(url, username, password)), delayBetweenLoginAttempts * 1000);
+      });
     };
-    return false;
   }
 
   async loadDevices(url: string, cookies: string): Promise<void> {
