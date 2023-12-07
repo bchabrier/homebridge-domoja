@@ -694,8 +694,15 @@ class DomojaPlatform implements DynamicPlatformPlugin {
         // check that characteristic will be OK
         const characteristic = service.getCharacteristic(characteristicConfig.characteristicName);
         if (!characteristic) {
-          this.log.error(`Characteristic "${characteristicConfig.characteristicName}" does not exist for service "${serviceConfig.serviceConstructorName}"! Possible characteristics are: ${service.characteristics.map(c => c.displayName).join(', ')}.`);
-          this.log.error(`optionals:`, service.optionalCharacteristics);
+          // try to add an optional characteristic
+          const optionalCharacteristic = service.optionalCharacteristics.find(oc => oc.displayName === characteristicConfig.characteristicName);
+          if (optionalCharacteristic) {
+            service.addCharacteristic(optionalCharacteristic);
+          } else {
+            const characteristicNames = service.characteristics.map(c => c.displayName);
+            const optionalCharacteristicNames = service.optionalCharacteristics.map(c => c.displayName)
+            this.log.error(`Characteristic "${characteristicConfig.characteristicName}" does not exist for service "${serviceConfig.serviceConstructorName}"! Possible characteristics are: ${characteristicNames.concat(optionalCharacteristicNames.filter(oc => !characteristicNames.includes(oc))).join(', ')}.`);
+          }
         }
       });
     });
