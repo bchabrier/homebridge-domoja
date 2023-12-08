@@ -42,8 +42,41 @@ export default function checkConfig(config: PlatformConfig, log: Logging): Confi
 
         return false;
     } else {
+
+        // check that there are no duplicate display names as these are used to generate the UUIDs
         log.debug(`Configuration is valid!`);
         const typedConfig = config as unknown as Config;
+
+        const accessoryDisplayNames: string[] = [];
+        let duplicateDisplayName: string | undefined = undefined;
+        let foundDuplicate = typedConfig.accessories.some(accessory => {
+            if (accessory.disabled) return false;
+            if ('devicesAndDisplayNames' in accessory) {
+                return Object.values(accessory.devicesAndDisplayNames).some(spec => {
+                    const displayName = (typeof spec === 'string') ? spec : spec.displayName;
+
+                    if (accessoryDisplayNames.includes(displayName)) {
+                        duplicateDisplayName = displayName;
+                        return true;
+                    }
+                    accessoryDisplayNames.push(displayName);
+                    return false;
+                });
+            } else {
+                if (accessoryDisplayNames.includes(accessory.displayName)) {
+                    duplicateDisplayName = accessory.displayName;
+                    return true;
+                }
+
+                accessoryDisplayNames.push(accessory.displayName);
+                return false;
+            }
+        });
+        if (foundDuplicate) {
+            log.error(`Error: duplicate accessory "${duplicateDisplayName}" found in configuration!`);
+            return false;
+        }
+
         return typedConfig;
     }
 }
