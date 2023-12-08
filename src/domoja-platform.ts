@@ -401,8 +401,7 @@ class DomojaPlatform implements DynamicPlatformPlugin {
             const existingAccessory = cachedAccessories.find(a =>
               a.context.config.services.length === 1 &&
               a.context.config.services[0].characteristics.length === 1 &&
-              a.context.config.services[0].characteristics[0].get &&
-              a.context.config.services[0].characteristics[0].get.device === devicePath);
+              a.displayName === accessoryConfig.displayName);
 
             const needUpdate = existingAccessory && !deepEqual(existingAccessory.context.config, accessoryConfig);
 
