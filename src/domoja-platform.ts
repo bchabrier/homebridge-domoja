@@ -65,6 +65,16 @@ function getServiceFromConstructorName(serviceName: string): typeof GenericServi
   return null;
 }
 
+declare class GenericCharacteristic extends Characteristic {
+  static readonly UUID: string;
+  constructor(displayName?: string, subtype?: string);
+}
+
+function getCharacteristicFromConstructorName(characteristicName: string): typeof GenericCharacteristic | null {
+  const characteristic: typeof GenericCharacteristic | null = (hap.Characteristic as any)[characteristicName];
+  if (characteristic && characteristic.UUID) return characteristic;
+  return null;
+}
 function getAllServiceNames(): string[] {
   return Object.keys(hap.Service).filter(key => getServiceFromConstructorName(key));
 }
@@ -331,7 +341,7 @@ class DomojaPlatform implements DynamicPlatformPlugin {
               if (characteristic.get && characteristic.get.device === device.path) {
                 if (!updated) this.log.debug(`Device state changed:`, value);
                 updated = true;
-                this.updateAccessoryCharacteristicFromDeviceState(accessory, service.serviceConstructorName, characteristic.characteristicName, value.newValue);
+                this.updateAccessoryCharacteristicFromDeviceState(accessory, service.serviceConstructorName, characteristic.characteristicConstructorName, value.newValue);
               }
             });
           });
@@ -389,9 +399,9 @@ class DomojaPlatform implements DynamicPlatformPlugin {
               displayName: displayName,
               disabled: ac.disabled !== undefined && ac.disabled !== false,
               services: [{
-                serviceConstructorName: service,
+                serviceConstructorName: service.replace(/ /g, ''),
                 characteristics: [{
-                  characteristicName: characteristic,
+                  characteristicConstructorName: characteristic.replace(/ /g, ''),
                   get: { device: devicePath, ...ac.get },
                   set: { device: devicePath, ...ac.set },
                 }]
@@ -431,7 +441,7 @@ class DomojaPlatform implements DynamicPlatformPlugin {
               if (!accessory) {
                 this.log.error(`Error in loadAccessories: no accessory created for ${displayName}.${service}.${characteristic}!`);
               } else {
-                const get = accessoryConfig.services.find(s => s.serviceConstructorName === service)?.characteristics.find(c => c.characteristicName === characteristic)?.get;
+                const get = accessoryConfig.services.find(s => s.serviceConstructorName === service)?.characteristics.find(c => c.characteristicConstructorName === characteristic)?.get;
                 if (get)
                   this.updateAccessoryCharacteristicFromDeviceState(accessory, service, characteristic, device.state.toString());
               }
@@ -447,14 +457,14 @@ class DomojaPlatform implements DynamicPlatformPlugin {
           displayName: ac.displayName,
           disabled: ac.disabled !== undefined && ac.disabled !== false,
           services: ac.services.map(s => ({
-            serviceConstructorName: s.service,
+            serviceConstructorName: s.service.replace(/ /g, ''),
             characteristics: s.characteristics.map(c => {
               return ('device' in c) ? {
-                characteristicName: c.characteristic,
+                characteristicConstructorName: c.characteristic.replace(/ /g, ''),
                 get: { device: c.device, ...c.get },
                 set: { device: c.device, ...c.set },
               } : {
-                characteristicName: c.characteristic,
+                characteristicConstructorName: c.characteristic.replace(/ /g, ''),
                 get: 'get' in c ? c.get : undefined,
                 set: 'set' in c ? c.set : undefined,
               }
@@ -497,13 +507,15 @@ class DomojaPlatform implements DynamicPlatformPlugin {
             ac.services.forEach(s => {
               s.characteristics.forEach(c => {
                 const device = ('device' in c) ? c.device : 'get' in c ? c.get.device : null;
+                const serviceConstructorName = s.service.replace(/ /g, '');
+                const characteristicConstructorName = c.characteristic.replace(/ /g, '');
                 if (device) {
                   const d = this.devices.get(device);
                   if (!d) {
-                    this.log.error(`Error in loadAccessories: for accessory ${ac.displayName}.${s.service}.${c.characteristic}, could not find device with path "${device}"!`);
+                    this.log.error(`Error in loadAccessories: for accessory ${ac.displayName}.${serviceConstructorName}.${c.characteristic}, could not find device with path "${device}"!`);
                   } else {
-                    this.log.debug(`About to update accessory ${ac.displayName}.${s.service}.${c.characteristic}, with device "${device}" state:`, d.state);
-                    this.updateAccessoryCharacteristicFromDeviceState(accessory!, s.service, c.characteristic, d.state.toString());
+                    this.log.debug(`About to update accessory ${ac.displayName}.${serviceConstructorName}.${characteristicConstructorName}, with device "${device}" state:`, d.state);
+                    this.updateAccessoryCharacteristicFromDeviceState(accessory!, serviceConstructorName, characteristicConstructorName, d.state.toString());
                   }
                 } else {
                   // no get defined, hence nothing to update (could be a set-only characteristic)
@@ -524,45 +536,50 @@ class DomojaPlatform implements DynamicPlatformPlugin {
     this.log.info(`Loaded ${countNew} new accessory(ies) from configuration, ${countUnchanged} unchanged, ${countUpdated} updated, ${countDisabled} disabled, ${unusedAccessories.length} removed.`);
   }
 
-  resolveAccessoryServiceCharacteristic(accessory: PlatformAccessory<AccessoryContext>, serviceConstructorName: string, characteristicName: string): Characteristic | undefined {
+  resolveAccessoryServiceCharacteristic(accessory: PlatformAccessory<AccessoryContext>, serviceConstructorName: string, characteristicConstructorName: string): Characteristic | undefined {
     const service1 = getServiceFromConstructorName(serviceConstructorName);
     if (!service1) {
-      this.log.error(`Error in resolveAccessoryServiceCharacteristic "${accessory.displayName}.${serviceConstructorName}.${characteristicName}": serviceConstructorName not found!`);
+      this.log.error(`Error in resolveAccessoryServiceCharacteristic "${accessory.displayName}.${serviceConstructorName}.${characteristicConstructorName}": serviceConstructorName not found!`);
       return;
     }
     const service2 = accessory.getService(service1);
     if (!service2) {
-      this.log.error(`Error in resolveAccessoryServiceCharacteristic "${accessory.displayName}.${serviceConstructorName}.${characteristicName}": service not found in accessory!`);
+      this.log.error(`Error in resolveAccessoryServiceCharacteristic "${accessory.displayName}.${serviceConstructorName}.${characteristicConstructorName}": service not found in accessory!`);
       return;
     }
-    const characteristic3 = service2.getCharacteristic(characteristicName);
+    const characteristic3 = getCharacteristicFromConstructorName(characteristicConstructorName);
+    if (!characteristic3?.name) {
+      this.log.error(`Error in resolveAccessoryServiceCharacteristic "${accessory.displayName}.${serviceConstructorName}.${characteristicConstructorName}": characteristicConstructorName not found!`);
+      return;
+    }
+    const characteristic4 = service2.getCharacteristic(characteristic3);
     if (!characteristic3) {
-      this.log.error(`Error in resolveAccessoryServiceCharacteristic "${accessory.displayName}.${serviceConstructorName}.${characteristicName}": characteristic not found!`);
+      this.log.error(`Error in resolveAccessoryServiceCharacteristic "${accessory.displayName}.${serviceConstructorName}.${characteristicConstructorName}": characteristic not found!`);
       return;
     }
-    return characteristic3;
+    return characteristic4;
   }
 
-  updateAccessoryCharacteristicFromDeviceState(accessory: PlatformAccessory<AccessoryContext>, serviceConstructorName: string, characteristicName: string, stateValue: string) {
-    this.log.debug(`Updating accessory "${accessory.displayName}.${serviceConstructorName}.${characteristicName}" with device state:`, stateValue);
+  updateAccessoryCharacteristicFromDeviceState(accessory: PlatformAccessory<AccessoryContext>, serviceConstructorName: string, characteristicConstructorName: string, stateValue: string) {
+    this.log.debug(`Updating accessory "${accessory.displayName}.${serviceConstructorName}.${characteristicConstructorName}" with device state:`, stateValue);
 
-    const characteristic = this.resolveAccessoryServiceCharacteristic(accessory, serviceConstructorName, characteristicName);
+    const characteristic = this.resolveAccessoryServiceCharacteristic(accessory, serviceConstructorName, characteristicConstructorName);
 
     if (!characteristic) {
-      this.log.error(`Error while preparing update of accessory "${accessory.displayName}.${serviceConstructorName}.${characteristicName}"!`);
+      this.log.error(`Error while preparing update of accessory "${accessory.displayName}.${serviceConstructorName}.${characteristicConstructorName}"!`);
       return;
     }
 
-    const characteristicConfig = accessory.context.config.services.filter(s => s.serviceConstructorName === serviceConstructorName)[0].characteristics.filter(c => c.characteristicName === characteristicName)[0];
+    const characteristicConfig = accessory.context.config.services.filter(s => s.serviceConstructorName === serviceConstructorName)[0].characteristics.filter(c => c.characteristicConstructorName === characteristicConstructorName)[0];
 
     if (!characteristicConfig.get) {
-      this.log.error(`Error updateAccessoryCharacteristicFromDeviceState should not be called when no get is defined, for accessory "${accessory.displayName}.${serviceConstructorName}.${characteristicName}"!`);
+      this.log.error(`Error updateAccessoryCharacteristicFromDeviceState should not be called when no get is defined, for accessory "${accessory.displayName}.${serviceConstructorName}.${characteristicConstructorName}"!`);
       return;
     }
 
     let transformedValue: number | string | boolean | null = this.getTransformedValue(characteristicConfig.get, stateValue);
     if (transformedValue !== null) {
-      this.log.info(`${accessory.context.config.displayName}.${serviceConstructorName}.${characteristicName} is now ${transformedValue}`);
+      this.log.info(`${accessory.context.config.displayName}.${serviceConstructorName}.${characteristicConstructorName} is now ${transformedValue}`);
       characteristic.updateValue(transformedValue);
     }
   }
@@ -623,10 +640,10 @@ class DomojaPlatform implements DynamicPlatformPlugin {
 
     accessory.context.config.services.forEach(service => {
       service.characteristics.forEach(characteristic => {
-        const characteristic2 = this.resolveAccessoryServiceCharacteristic(accessory, service.serviceConstructorName, characteristic.characteristicName);
+        const characteristic2 = this.resolveAccessoryServiceCharacteristic(accessory, service.serviceConstructorName, characteristic.characteristicConstructorName);
 
         if (!characteristic2) {
-          this.log.error(`In configureAccessory: could not find characteristic "${characteristic.characteristicName}" of accessory "${accessory.displayName}"`);
+          this.log.error(`In configureAccessory: could not find characteristic "${characteristic.characteristicConstructorName}" of accessory "${accessory.displayName}"`);
         } else {
 
           const set = characteristic.set;
@@ -644,9 +661,9 @@ class DomojaPlatform implements DynamicPlatformPlugin {
               if (transformedValue !== null) {
                 this.setDeviceValue(device, transformedValue, (err) => {
                   if (err) {
-                    this.log.warn(`${accessory.context.config.displayName}.${service.serviceConstructorName}.${characteristic.characteristicName} could not be set to ${value}:`, err);
+                    this.log.warn(`${accessory.context.config.displayName}.${service.serviceConstructorName}.${characteristic.characteristicConstructorName} could not be set to ${value}:`, err);
                   } else {
-                    this.log.info(`${accessory.context.config.displayName}.${service.serviceConstructorName}.${characteristic.characteristicName} was set to ${value}`);
+                    this.log.info(`${accessory.context.config.displayName}.${service.serviceConstructorName}.${characteristic.characteristicConstructorName} was set to ${value}`);
                   }
                   callback(err);
                 });
@@ -688,16 +705,18 @@ class DomojaPlatform implements DynamicPlatformPlugin {
 
       serviceConfig.characteristics.forEach(characteristicConfig => {
         // check that characteristic will be OK
-        const characteristic = service.getCharacteristic(characteristicConfig.characteristicName);
+        const characteristicConstructor = getCharacteristicFromConstructorName(characteristicConfig.characteristicConstructorName);
+
+        const characteristic = characteristicConstructor ? service.getCharacteristic(characteristicConstructor) : undefined;
         if (!characteristic) {
           // try to add an optional characteristic
-          const optionalCharacteristic = service.optionalCharacteristics.find(oc => oc.displayName === characteristicConfig.characteristicName);
+          const optionalCharacteristic = service.optionalCharacteristics.find(oc => oc.displayName.replace(/ /g, '') === characteristicConfig.characteristicConstructorName);
           if (optionalCharacteristic) {
             service.addCharacteristic(optionalCharacteristic);
           } else {
             const characteristicNames = service.characteristics.map(c => c.displayName);
             const optionalCharacteristicNames = service.optionalCharacteristics.map(c => c.displayName)
-            this.log.error(`Characteristic "${characteristicConfig.characteristicName}" does not exist for service "${serviceConfig.serviceConstructorName}"! Possible characteristics are: ${characteristicNames.concat(optionalCharacteristicNames.filter(oc => !characteristicNames.includes(oc))).join(', ')}.`);
+            this.log.error(`Characteristic "${characteristicConfig.characteristicConstructorName}" does not exist for service "${serviceConfig.serviceConstructorName}"! Possible characteristics are: ${characteristicNames.concat(optionalCharacteristicNames.filter(oc => !characteristicNames.includes(oc))).map(n => n.replace(/ /g, '')).join(', ')}.`);
           }
         }
       });

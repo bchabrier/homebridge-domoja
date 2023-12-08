@@ -81,7 +81,9 @@ Accessories can be configured through two different ways:
 
 Services are refered by their constructor name (the service name with no separating blanks), while characteristics are refered by their name.
 
-The list of available services and associated characteristics can be found [here](https://github.com/brutella/hap/blob/master/service/README.md).
+The list of available services and associated characteristics can be found [here](https://github.com/brutella/hap/blob/master/service/README.md), or here:
+
+`homebridge-domoja\node_modules\hap-nodejs\dist\lib\definitions\ServiceDefinitions.js`
 
 ### `get` and `set`
 Characteristics take their value from a domoja device state. Reversely, setting a characteristic value can set a device state. Which device state to set or get is defined by the `set` and `get` blocks.

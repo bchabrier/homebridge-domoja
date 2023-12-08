@@ -10,7 +10,7 @@ export type AccessoryConfig = {
     services: {
         serviceConstructorName: string;
         characteristics: {
-            characteristicName: string;
+            characteristicConstructorName: string;
             set?: { device: string; } & (StateMapping | {}),
             get?: { device: string; } & (StateMapping | {}),
         }[];
