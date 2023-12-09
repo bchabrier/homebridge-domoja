@@ -156,6 +156,7 @@ class DomojaPlatform implements DynamicPlatformPlugin {
 
       this.loadDevices().then(() => {
         this.loadAccessories(config);
+        this.displaySummary();
         this.devicesLoaded = true;
         this.tryStartSocketToDomoja();
       });
@@ -535,6 +536,54 @@ class DomojaPlatform implements DynamicPlatformPlugin {
 
     this.log.info(`Loaded ${countNew} new accessory(ies) from configuration, ${countUnchanged} unchanged, ${countUpdated} updated, ${countDisabled} disabled, ${unusedAccessories.length} removed.`);
   }
+
+  displaySummary() {
+
+    function mappingToString(mapping: (string | number | boolean | null)[]): string {
+      let ret: string[] = [];
+      for (let i = 0; i < mapping.length; i += 2) {
+        ret.push(`${mapping[i]}=>${mapping[i + 1]}`);
+      }
+      return ret.join(', ');
+    }
+
+    const table: {
+      Accessory: string;
+      Service: string;
+      Characteristic: string;
+      AccessoryServiceCharacteristic: string;
+      Set?: string;
+      Get?: string;
+    }[] = this.accessories.flatMap(accessory =>
+      accessory.context.config.services.flatMap(service =>
+        service.characteristics.flatMap(characteristic => {
+          const ret: typeof table[0] = {
+            Accessory: accessory.displayName,
+            Service: service.serviceConstructorName,
+            Characteristic: characteristic.characteristicConstructorName,
+            AccessoryServiceCharacteristic: `${accessory.displayName}.${service.serviceConstructorName}.${characteristic.characteristicConstructorName}`,
+          };
+          if (characteristic.set) ret.Set = `${characteristic.set.device}${'mapping' in characteristic.set ? `: ${mappingToString(characteristic.set.mapping)}` : ''}`;
+          if (characteristic.get) ret.Get = `${characteristic.get.device}${'mapping' in characteristic.get ? `: ${mappingToString(characteristic.get.mapping)}` : ''}`;
+          return ret;
+        })));
+
+    const columns: (keyof typeof table[0])[] = ['AccessoryServiceCharacteristic', 'Get', 'Set'];
+    //console.table(table, columns);
+
+    let previousAccessory: string = ''
+    table.forEach(elt => {
+      const accessory = elt.Accessory;
+      if (accessory != previousAccessory) {
+        this.log.debug(`Accessory "${accessory}":`);
+        previousAccessory = accessory;
+      }
+      this.log.debug(`\tService.Characteristic "${elt.Service}.${elt.Characteristic}":`);
+      if (elt.Get) this.log.debug(`\t\tget: ${elt.Get}`);
+      if (elt.Set) this.log.debug(`\t\tset: ${elt.Set}`);
+    });
+
+  };
 
   resolveAccessoryServiceCharacteristic(accessory: PlatformAccessory<AccessoryContext>, serviceConstructorName: string, characteristicConstructorName: string): Characteristic | undefined {
     const service1 = getServiceFromConstructorName(serviceConstructorName);
