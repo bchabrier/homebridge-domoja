@@ -91,4 +91,17 @@ Characteristics take their value from a domoja device state. Reversely, setting 
 ### `mapping`
 If a characteristic value needs to be transformed into a device state, and vice-versa, then a `mapping` block can be defined. It consists in an array of values. The array has a pair length. Each value is followed by its transformed value. A `null` transformed value means that no transformed value will be used (i.e., the characteristic will not be updated - in a `get` block -, or the device state will not be set - in a `set` block -).
 
+## Troubleshooting
+
+Use the following command to trace homebridge activity:
+
+`DEBUG='*,-engine.io-client*,-socket.io-parser,-socket.io-client*' homebridge -D`
+
+### Known issues
+
+- `Faucet` service seems to be buggy. Despite setting the characteristic `Active` to `0` or `1` the icon constantly says 'Mise a jour'. Instead use `Valve` with `In Use`.
+- `Color Temperature` characteristic is missing from `LightBulb` service in [our list](https://github.com/brutella/hap/blob/master/service/README.md).
+- Characteristic `Status Fault` is not visible in HomeKit.
+
+## To do
 
