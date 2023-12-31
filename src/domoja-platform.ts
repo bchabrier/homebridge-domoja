@@ -151,16 +151,26 @@ class DomojaPlatform implements DynamicPlatformPlugin {
     this.username = config.auth.username;
     this.password = config.auth.password;
 
-    this.login().then(done => {
-      if (false) return; // error was logged previously
+    const retryDelay = 10;
+    const tryLoadDevices = () => {
+      this.login().then(done => {
+        if (!done) return; // error was logged previously
 
-      this.loadDevices().then(() => {
-        this.loadAccessories(config);
-        this.displaySummary();
-        this.devicesLoaded = true;
-        this.tryStartSocketToDomoja();
+        this.loadDevices().then(success => {
+          if (success) {
+            this.loadAccessories(config);
+            this.displaySummary();
+            this.devicesLoaded = true;
+            this.tryStartSocketToDomoja();
+          } else {
+            log.warn(`Could not retrieve devices from Domoja. Retrying in ${retryDelay}s...`);
+            setTimeout(tryLoadDevices, retryDelay * 1000);
+          }
+        });
       });
-    });
+    }
+
+    tryLoadDevices();
 
     log.info("Domoja platform finished initializing!");
 
@@ -250,9 +260,9 @@ class DomojaPlatform implements DynamicPlatformPlugin {
 
         if (!silentLogin) {
           if (loginRetry <= options.maxLoggedLoginRetries) {
-            this.log.warn("Cannot connect to domoja server for login, will retry in ${delayBetweenLoginAttempts} seconds:", response.status, response.statusText);
+            this.log.warn(`Cannot connect to domoja server for login (got no set-cookie), will retry in ${options.delayBetweenLoginAttempts} seconds:`, response.status, response.statusText);
           } else {
-            this.log.warn(`Could not connect for ${options.maxLoggedLoginRetries} to domoja server for login, continuing silently:`, response.status, response.statusText);
+            this.log.warn(`Could not connect after ${options.maxLoggedLoginRetries} retries to domoja server for login (got no set-cookie), continuing silently:`, response.status, response.statusText);
           }
         }
         return new Promise<boolean>(async (resolve, reject) => {
@@ -261,9 +271,9 @@ class DomojaPlatform implements DynamicPlatformPlugin {
       } catch (error) {
         if (!silentLogin) {
           if (loginRetry <= options.maxLoggedLoginRetries) {
-            this.log.warn("Cannot connect to domoja server for login, will retry in ${delayBetweenLoginAttempts} seconds:", error);
+            this.log.warn(`Cannot connect to domoja server for login (got error), will retry in ${options.delayBetweenLoginAttempts} seconds:`, error);
           } else {
-            this.log.warn(`Could not connect for ${options.maxLoggedLoginRetries} times to domoja server for login, continuing silently:`, error);
+            this.log.warn(`Could not connect after ${options.maxLoggedLoginRetries} retries to domoja server for login (got error), continuing silently:`, error);
             silentLogin = true;
           }
         }
@@ -276,7 +286,7 @@ class DomojaPlatform implements DynamicPlatformPlugin {
     return doLogin(this.url, this.username, this.password);
   }
 
-  async loadDevices(): Promise<void> {
+  async loadDevices(): Promise<boolean> {
     let devices: Device[] = [];
     try {
       const target = (this.url.endsWith('/') ? this.url : this.url + '/') + "devices";
@@ -288,11 +298,13 @@ class DomojaPlatform implements DynamicPlatformPlugin {
 
       devices = await response.json();
 
-      if (!devices) this.log.error("Cannot connect to domoja server to get devices:", response.status, response.statusText);
-
+      if (!devices) {
+        this.log.error("Cannot connect to domoja server to get devices:", response.status, response.statusText);
+        return false;
+      }
     } catch (error) {
       this.log.error("Cannot connect to domoja server to get devices:", error);
-      return
+      return false;
     };
 
     if (devices) {
@@ -301,8 +313,9 @@ class DomojaPlatform implements DynamicPlatformPlugin {
         this.devices.set(d.path, d);
       });
       this.log.info(`Loaded ${devices.length} device(s) from domoja server`);
+      return true;
     }
-
+    return false;
   }
 
   tryStartSocketToDomoja() {
@@ -358,9 +371,9 @@ class DomojaPlatform implements DynamicPlatformPlugin {
       console.log('message', message);
     });
     this.socket.on('connect_error', (error: any) => {
-      if (error.description === '401') {
-        this.log.warn(`connect_error 401 with connection to domoja server, let's login again!`);
-        this.login();
+      if (error.description === '401' || error.description === 401) {
+        this.log.warn(`connect_error 401 with connection to domoja server, let's login again!`, error);
+        this.login(); // re-login should be sufficient
       } else {
         this.log.error('connect_error with connection to domoja server:', error);
       }
@@ -516,7 +529,8 @@ class DomojaPlatform implements DynamicPlatformPlugin {
                     this.log.error(`Error in loadAccessories: for accessory ${ac.displayName}.${serviceConstructorName}.${c.characteristic}, could not find device with path "${device}"!`);
                   } else {
                     this.log.debug(`About to update accessory ${ac.displayName}.${serviceConstructorName}.${characteristicConstructorName}, with device "${device}" state:`, d.state);
-                    this.updateAccessoryCharacteristicFromDeviceState(accessory!, serviceConstructorName, characteristicConstructorName, d.state.toString());
+                    const str = d.state === undefined ? "undefined" : d.state === null ? "null" : d.state.toString();
+                    this.updateAccessoryCharacteristicFromDeviceState(accessory!, serviceConstructorName, characteristicConstructorName, str);
                   }
                 } else {
                   // no get defined, hence nothing to update (could be a set-only characteristic)
