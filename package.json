@@ -10,6 +10,7 @@
     "update-config-schema": "[ src/config.ts -ot src/config.jtd.json ] || typescript-json-schema --required --noExtraProps --strictNullChecks src/config.ts Config -o src/config.jtd.json",
     "prepublishOnly": "npm run build",
     "postpublish": "#npm run clean",
+    "pm2:install": "pm2 -s delete homebridge; pm2 -s start --name homebridge homebridge; pm2 -s delete mediamtx; pm2 -s start --name mediamtx ~/mediamtx/mediamtx -- ~/domoja-config/homebridge/mediamtx.yml; pm2 -s save; pm2 list",
     "test": "echo \"Error: no test specified\" && exit 1"
   },
   "author": "Bruno Chabrier",
